@@ -1,0 +1,81 @@
+---
+title: "CMT_data_processing"
+output: html_document
+date: "2025-10-13"
+---
+
+# Loading necessary packages
+```{r}
+install.packages("pacman")
+library(pacman)
+pacman::p_load(data.table, stringr, readr, tidyverse, purrr)
+
+```
+
+# Selecting variants predicted "pathogenic" or "likely pathogenic" by ClinVar
+```{r}
+cmt_data <- fread("whole_anno_final.vcf")
+
+cmt_pathogenic <- cmt_data[
+  map_lgl(str_split(cmt_data$CLIN_SIG, "&"), ~ any(.x %in% c("pathogenic", "likely_pathogenic"))),
+]
+
+# creating file with just variant info for later annotation
+cmt_variant_info <- vcf[,1:88]
+
+```
+
+
+# Extracting carriers from VCF of pathogenic variants
+```{r}
+extract_carriers <- function(dataset) {
+  dt <- as.data.table(dataset)
+  melted <- melt(dt, id.vars = names(dt)[1:8], variable.name = "sample", value.name = "genotype")
+  
+  melted[, zygosity := fifelse(genotype %in% c("0/1", "1/0"), "het",
+                               fifelse(genotype == "1/1", "hom", NA_character_))]
+  
+  result <- melted[!is.na(zygosity), .(
+    chrom = get(names(dt)[1]),
+    pos = get(names(dt)[2]),
+    ID = get(names(dt)[3]),
+    ref = get(names(dt)[4]),
+    alt = get(names(dt)[5]),
+    zygosity,
+    eid = substr(sample, 1, 7)
+  )]
+  
+  return(result)
+}
+
+patho_carriers <- extract_carriers(cmt_pathogenic)
+
+```
+
+
+# Generating counts data for each individual variant
+```{r}
+# creating counts
+patho_counts <- table(patho_carriers$ID, patho_carriers$zygosity)
+patho_counts <- as.data.frame(patho_counts)
+patho_counts <- patho_counts %>% pivot_wider(names_from = Var2, values_from = Freq, values_fill = NA)
+colnames(patho_counts) <- c("ID","het","hom")
+patho_counts <- merge(patho_counts, cmt_variant_info, by = "ID")
+
+```
+
+
+# filtering phenotypic data to only CMT cohort
+```{r}
+pheno <- fread("pheno_data.csv")
+cmt_cohort <- pheno[pheno$eid %in% carrier$eid,]
+
+cmt_cohort$cohort <- ifelse((rowSums(cmt_cohort[, c(5:6)], na.rm = TRUE) > 0) & (rowSums(cmt_cohort[, c(7:22)], na.rm = TRUE) > 0) | (!is.na(cmt_cohort$neuropathic_pain) & cmt_cohort$neuropathic_pain == 1), "pain", "no_pain")
+
+write.csv(cmt_cohort, "cmt_cohort.csv", quote = FALSE, row.names = FALSE)
+```
+
+
+
+
+
