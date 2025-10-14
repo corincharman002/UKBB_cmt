@@ -37,6 +37,7 @@ chronic_pain$chronic_pain[chronic_pain$chronic_pain == FALSE] <- 0
 
 # neuropathic pain phenotype formatting
 ```{r}
+eop <- as.data.frame(eop)
 keep <- c("eid", "p120046","p120047","p120048","p120049","p120050","p120051","p120052")
 eop <- eop[, (names(eop)) %in% keep]
 
