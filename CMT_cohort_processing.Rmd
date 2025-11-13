@@ -14,7 +14,7 @@ pacman::p_load(data.table, stringr, purrr, dplyr)
 
 # Loading files
 ```{r}
-general <- fread("UKB_general.csv")S
+general <- fread("UKB_general.csv")
 eop <- fread("UKB_EOP.csv")
 drugs <- fread("UKB_Rx_drugs.csv")
 icd <- fread("UKB_icd.csv")
@@ -113,3 +113,4 @@ df_list <- list(chronic_pain, prescriptions, comorbidities, neuropathic_pain)
 pheno_data <- purrr::reduce(df_list, full_join, by = "eid")
 write.csv(pheno_data, "pheno_data.csv", quote = FALSE, row.names = FALSE)
 ```
+
