@@ -99,9 +99,10 @@ mutate(
     radiculopathy = ifelse(str_detect(p41270, regex("M54|M541|M5410", ignore_case = TRUE)), 1, 0),
     back_pain = ifelse(str_detect(p41270, regex("M545", ignore_case = TRUE)), 1, 0),
     osteoarthritis = ifelse(str_detect(p41270, regex("M1990|M199|M159|M161|M171", ignore_case = TRUE)), 1, 0),
-    sjogrens_syndrome = ifelse(str_detect(p41270, regex("M3500|M350|M35", ignore_case = TRUE)), 1, 0)
+    sjogrens_syndrome = ifelse(str_detect(p41270, regex("M3500|M350|M35", ignore_case = TRUE)), 1, 0),
+    gait_abnormalities = ifelse(str_detect(p41270, regex("R2689|R26|R268|R269|R260|R261|R262", ignore_case = TRUE)), 1, 0)
   )
-comorbidities <- as.data.frame(subset(comorbidities, select = -c(p41270, p41272, p120037))
+comorbidities <- as.data.frame(subset(comorbidities, select = -c(p41270, p41272, p120037)))
 
 ```
 
@@ -113,5 +114,6 @@ df_list <- list(chronic_pain, prescriptions, comorbidities, neuropathic_pain)
 pheno_data <- purrr::reduce(df_list, full_join, by = "eid")
 write.csv(pheno_data, "pheno_data.csv", quote = FALSE, row.names = FALSE)
 ```
+
 
 
