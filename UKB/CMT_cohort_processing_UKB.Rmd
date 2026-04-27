@@ -1,0 +1,107 @@
+---
+title: "CMT_cohort_processing"
+output: html_document
+date: "2025-10-13"
+---
+# Loading necessary packages
+```{r}
+install.packages("pacman")
+library(pacman)
+pacman::p_load(data.table, stringr, purrr, dplyr)
+
+```
+
+
+# Loading files
+```{r}
+general <- fread("UKB_general.csv")S
+eop <- fread("UKB_EOP.csv")
+drugs <- fread("UKB_Rx_drugs.csv")
+icd <- fread("UKB_icd.csv")
+weak_numb <- fread("UKB_weak_numbness.csv")
+grip <- fread("UKB_grip.csv")
+
+```
+
+
+# chronic pain phenotype formatting
+```{r}
+chronic_pain <- data.frame(
+  eid = general$eid,
+  age = general$p21022,
+  sex = general$p31,
+  chronic_pain = rowSums(general[,6:13], na.rm=TRUE) >= 1
+)
+chronic_pain$chronic_pain[chronic_pain$chronic_pain == TRUE] <- 1
+chronic_pain$chronic_pain[chronic_pain$chronic_pain == FALSE] <- 0
+```
+
+
+# neuropathic pain phenotype formatting
+```{r}
+eop <- as.data.frame(eop)
+keep <- c("eid", "p120046","p120047","p120048","p120049","p120050","p120051","p120052")
+eop <- eop[, (names(eop)) %in% keep]
+
+neuropathic_pain <- data.frame(
+  eid = eop$eid,
+  neuropathic_pain = (rowSums(eop[, c(2:8)], na.rm = FALSE)) >= 3
+)
+
+neuropathic_pain$neuropathic_pain[neuropathic_pain$neuropathic_pain == TRUE] <- 1
+neuropathic_pain$neuropathic_pain[neuropathic_pain$neuropathic_pain == FALSE] <- 0
+
+```
+
+
+# comorbidity data formatting
+```{r}
+# Generating columns for each comorbidity assessed in the paper
+# ICD-10 codes per Supplementary Table 8
+comorbidities <- icd %>%
+  mutate(
+    # Neuropathy-related (differential diagnosis / misdiagnosis panel)
+    peripheral_neuropathy_unspecified = ifelse(str_detect(p41270, regex("G629|G62|G64", ignore_case = TRUE)), 1, 0),
+    idiopathic_neuropathy             = ifelse(str_detect(p41270, regex("G629", ignore_case = TRUE)), 1, 0),
+    polyneuropathy                    = ifelse(str_detect(p41270, regex("G622|G629|G63", ignore_case = TRUE)), 1, 0),
+    cidp                              = ifelse(str_detect(p41270, regex("G618", ignore_case = TRUE)), 1, 0),
+    radiculopathy                     = ifelse(str_detect(p41270, regex("M541", ignore_case = TRUE)), 1, 0),
+
+    # Acquired neuropathy confounders
+    diabetic_neuropathy               = ifelse(str_detect(p41270, regex("E114|E1141|E1142|E1143", ignore_case = TRUE)), 1, 0),
+    alcohol_abuse                     = ifelse(str_detect(p41270, regex("F101", ignore_case = TRUE)), 1, 0),
+    sjogrens_syndrome                 = ifelse(str_detect(p41270, regex("M350", ignore_case = TRUE)), 1, 0),
+
+    # Negative control comorbidities (no known CMT association)
+    type2_diabetes                    = ifelse(str_detect(p41270, regex("E119|E1165", ignore_case = TRUE)), 1, 0),
+    rheumatoid_arthritis              = ifelse(str_detect(p41270, regex("M069", ignore_case = TRUE)), 1, 0),
+    osteoarthritis                    = ifelse(str_detect(p41270, regex("M199|M159|M161|M171", ignore_case = TRUE)), 1, 0),
+    fibromyalgia                      = ifelse(str_detect(p41270, regex("M797", ignore_case = TRUE)), 1, 0),
+    disc_disorders                    = ifelse(str_detect(p41270, regex("M50|M51", ignore_case = TRUE)), 1, 0),
+    back_pain                         = ifelse(str_detect(p41270, regex("M545", ignore_case = TRUE)), 1, 0),
+    epilepsy                          = ifelse(str_detect(p41270, regex("G409", ignore_case = TRUE)), 1, 0)
+  )
+
+comorbidities <- as.data.frame(subset(comorbidities, select = -p41270))
+
+```
+
+```{r}
+colnames(weak_numb) <- c("eid", "muscle_weakness", "leg_numbness")
+weak_numb$muscle_weakness[weak_numb$muscle_weakness < 0] <- NA
+weak_numb$leg_numbness[weak_numb$leg_numbness < 0] <- NA
+
+colnames(grip) <- c("eid", "left_grip", "right_grip")
+grip$left_grip[grip$left_grip < 0] <- NA
+grip$right_grip[grip$right_grip < 0] <- NA
+
+```
+
+
+
+# Merging data into a single file
+```{r}
+df_list <- list(chronic_pain, prescriptions, comorbidities, neuropathic_pain, weak_numb, grip)
+pheno_data <- purrr::reduce(df_list, full_join, by = "eid")
+write.csv(pheno_data, "pheno_data.csv", quote = FALSE, row.names = FALSE)
+```

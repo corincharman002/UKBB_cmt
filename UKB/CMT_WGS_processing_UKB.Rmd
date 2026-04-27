@@ -1,0 +1,106 @@
+---
+title: "CMT_data_processing"
+output: html_document
+date: "2025-10-13"
+---
+
+# Loading necessary packages
+```{r}
+install.packages("pacman")
+library(pacman)
+pacman::p_load(data.table, stringr, readr, tidyverse, purrr, dyplyr)
+
+```
+
+# Selecting variants predicted "pathogenic" or "likely pathogenic" by ClinVar
+```{r}
+cmt_data <- fread("whole_population_pathogenic.vcf")
+
+# creating file with just variant info for later annotation
+cmt_variant_info <- vcf[,1:88]
+
+```
+
+
+# Extracting carriers from VCF of pathogenic variants
+```{r}
+extract_carriers <- function(dataset) {
+  dt <- as.data.table(dataset)
+  melted <- melt(dt, id.vars = names(dt)[1:8], variable.name = "sample", value.name = "genotype")
+  
+  melted[, zygosity := fifelse(genotype %in% c("0/1", "1/0"), "het",
+                               fifelse(genotype == "1/1", "hom", NA_character_))]
+  
+  result <- melted[!is.na(zygosity), .(
+    chrom = get(names(dt)[1]),
+    pos = get(names(dt)[2]),
+    ID = get(names(dt)[3]),
+    ref = get(names(dt)[4]),
+    alt = get(names(dt)[5]),
+    zygosity,
+    eid = substr(sample, 1, 7)
+  )]
+  
+  return(result)
+}
+
+patho_carriers <- extract_carriers(cmt_pathogenic)
+
+```
+
+
+# Generating counts data for each individual variant
+```{r}
+# creating counts
+patho_counts <- table(patho_carriers$ID, patho_carriers$zygosity)
+patho_counts <- as.data.frame(patho_counts)
+patho_counts <- patho_counts %>% pivot_wider(names_from = Var2, values_from = Freq, values_fill = NA)
+colnames(patho_counts) <- c("ID","het","hom")
+patho_counts <- merge(patho_counts, cmt_variant_info, by = "ID")
+
+patho_carriers <- patho_carriers %>%
+  mutate(rsid = str_extract(ID, "rs\\d+"))
+
+cmt_gene_info <- subset(cmt_variant_info, select = c("rsid", "SYMBOL"))
+patho_carriers <- merge(patho_carriers, cmt_gene_info, by = "rsid")
+
+carrier_data <- carrier_data %>%
+  rename(gene = SYMBOL)
+
+patho_carriers$rsid <- paste0(patho_carriers$gene, "_", patho_carriers$rsid)
+
+```
+
+
+# filtering phenotypic data to only CMT cohort
+```{r}
+
+pheno <- fread("pheno_data.csv")
+
+rsid_wide <- patho_carriers %>%
+  mutate(present = 1) %>%
+  pivot_wider(
+    id_cols     = eid,
+    names_from  = rsid,
+    values_from = present,
+    values_fill = 0
+  )
+
+gene_wide <- patho_carriers %>%
+  mutate(present = 1) %>%
+  pivot_wider(
+    id_cols     = eid,
+    names_from  = gene,
+    values_from = present,
+    values_fill = 0
+  )
+
+pheno <- pheno %>%
+  left_join(rsid_wide, by = "eid") %>%
+  left_join(gene_wide, by = "eid") %>%
+  mutate(across(all_of(c(names(rsid_wide), names(gene_wide))), ~ replace_na(.x, 0)))
+
+write.csv(pheno, "pheno_data.csv", quote = FALSE, row.names = FALSE)
+```
+
+
